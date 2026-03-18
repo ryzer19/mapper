@@ -455,6 +455,7 @@ struct TrackingMapView: UIViewRepresentable {
                 var coords = seg.points.map { $0.coordinate }
                 let overlay = SegmentOverlay(coordinates: &coords, count: coords.count)
                 overlay.isActive = seg.isActive
+                overlay.segment  = seg
                 map.addOverlay(overlay, level: .aboveLabels)
             }
         }
@@ -646,6 +647,7 @@ private var pulseKey: UInt8 = 0
 
 class SegmentOverlay: MKPolyline {
     var isActive: Bool = false
+    var segment: DrivenSegment? = nil
 }
 
 class CarAnnotation: NSObject, MKAnnotation {

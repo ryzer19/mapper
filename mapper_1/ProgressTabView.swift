@@ -3,6 +3,7 @@ import CoreLocation
 
 struct ProgressTabView: View {
     @EnvironmentObject var userStore: UserStore
+    @State private var selectedRoute: DrivenSegment? = nil
 
     var body: some View {
         NavigationStack {
@@ -37,30 +38,44 @@ struct ProgressTabView: View {
                         .listRowBackground(Color.clear)
                     } else {
                         ForEach(userStore.segments.filter { $0.points.count >= 2 }.reversed()) { seg in
-                            HStack(spacing: 12) {
-                                Image(systemName: seg.isActive
-                                      ? "record.circle.fill" : "checkmark.circle.fill")
-                                    .foregroundStyle(seg.isActive ? .red : .secondary.opacity(0.5))
-                                    .font(.system(size: 15))
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(seg.isActive ? "In progress…" : routeTitle(seg))
-                                        .font(.subheadline)
-                                    Text(seg.startedAt.formatted(date: .abbreviated, time: .shortened))
-                                        .font(.caption2)
+                            Button {
+                                guard !seg.isActive else { return }
+                                selectedRoute = seg
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Image(systemName: seg.isActive
+                                          ? "record.circle.fill" : "checkmark.circle.fill")
+                                        .foregroundStyle(seg.isActive ? .red : .secondary.opacity(0.5))
+                                        .font(.system(size: 15))
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(seg.isActive ? "In progress…" : routeTitle(seg))
+                                            .font(.subheadline)
+                                        Text(seg.startedAt.formatted(date: .abbreviated, time: .shortened))
+                                            .font(.caption2)
+                                            .foregroundStyle(.secondary)
+                                    }
+                                    Spacer()
+                                    Text(routeDistance(seg))
+                                        .font(.caption.monospacedDigit())
                                         .foregroundStyle(.secondary)
+                                    if !seg.isActive {
+                                        Image(systemName: "chevron.right")
+                                            .font(.caption2.weight(.semibold))
+                                            .foregroundStyle(.tertiary)
+                                    }
                                 }
-                                Spacer()
-                                Text(routeDistance(seg))
-                                    .font(.caption.monospacedDigit())
-                                    .foregroundStyle(.secondary)
+                                .padding(.vertical, 2)
                             }
-                            .padding(.vertical, 2)
+                            .buttonStyle(.plain)
                         }
                     }
                 }
             }
             .navigationTitle("Routes")
             .navigationBarTitleDisplayMode(.large)
+            .fullScreenCover(item: $selectedRoute) { seg in
+                RouteDetailView(segment: seg)
+            }
         }
     }
 
