@@ -20,6 +20,9 @@ struct RoutingView: View {
 
     var isDark: Bool { colorScheme == .dark }
     var speedKmh: String { String(format: "%.0f", speed * 3.6) }
+    var currentFilter: MapFilter {
+        userStore.mapFilter(isSatellite: isSatellite)
+    }
 
     var body: some View {
         ZStack {
@@ -28,12 +31,18 @@ struct RoutingView: View {
                 headingUp: headingUp,
                 isDark: isDark,
                 isSatellite: isSatellite,
-                resolvedTileURL: userStore.resolvedTileURL(labels: userStore.showMapLabels),
+                resolvedTileURL: userStore.resolvedTileURL(),
                 lineColour: userStore.lineColour,
                 lineOpacity: userStore.lineOpacity,
                 pulseActive: userStore.pulseActive
             )
             .ignoresSafeArea(.all)
+            .grayscale(currentFilter.grayscale)
+            .saturation(currentFilter.saturation)
+            .hueRotation(.degrees(currentFilter.hueRotation))
+            .contrast(currentFilter.contrast)
+            .brightness(currentFilter.brightness)
+            .animation(.easeInOut(duration: 0.4), value: currentFilter)
 
             VStack(spacing: 0) {
                 // Top bar
@@ -150,6 +159,10 @@ struct LiveTrackingMapView: UIViewRepresentable {
         return resolvedTileURL.isEmpty ? nil : resolvedTileURL
     }
 
+    private var tileKey: String {
+        isSatellite ? "__sat__" : (tileURL ?? "__native__")
+    }
+
     func makeUIView(context: Context) -> MKMapView {
         let map = MKMapView(frame: .zero)
         map.delegate = context.coordinator
@@ -158,12 +171,10 @@ struct LiveTrackingMapView: UIViewRepresentable {
         map.isRotateEnabled = true
         map.isPitchEnabled = false
         map.userTrackingMode = .followWithHeading
-        if let url = tileURL {
-            context.coordinator.applyTile(to: map, url: url)
-        } else {
-            map.mapType = .hybridFlyover
-        }
-        context.coordinator.currentTileURL = tileURL ?? ""
+        if let url = tileURL { context.coordinator.applyTile(to: map, url: url) }
+        else if isSatellite { map.mapType = .hybridFlyover }
+        else { map.mapType = .standard }
+        context.coordinator.currentTileURL = tileKey
         return map
     }
 
@@ -175,15 +186,16 @@ struct LiveTrackingMapView: UIViewRepresentable {
         c.pulseActive = pulseActive
 
         // Tile swap
-        let resolvedURL = tileURL ?? ""
-        if c.currentTileURL != resolvedURL {
-            c.currentTileURL = resolvedURL
+        if c.currentTileURL != tileKey {
+            c.currentTileURL = tileKey
             map.overlays.filter { $0 is MKTileOverlay }.forEach { map.removeOverlay($0) }
             if let url = tileURL {
                 map.mapType = .standard
                 c.applyTile(to: map, url: url)
-            } else {
+            } else if isSatellite {
                 map.mapType = .hybridFlyover
+            } else {
+                map.mapType = .standard
             }
         }
 
@@ -212,7 +224,7 @@ struct LiveTrackingMapView: UIViewRepresentable {
         }
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(tileURL: tileURL ?? "") }
+    func makeCoordinator() -> Coordinator { Coordinator(tileURL: tileKey) }
 
     class Coordinator: NSObject, MKMapViewDelegate {
         var currentTileURL: String

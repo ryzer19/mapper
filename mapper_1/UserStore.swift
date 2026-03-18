@@ -28,96 +28,13 @@ struct CodableCoordinate: Codable, Equatable {
 
 // MARK: - Personalisation Models
 
-/// Dark-mode map flavours — all use dark backgrounds
-enum DarkMapStyle: String, CaseIterable, Identifiable {
-    case midnight   = "midnight"    // near-black, high contrast
-    case noir       = "noir"        // dark grey, softer
-    case slate      = "slate"       // blue-tinted dark
-
-    var id: String { rawValue }
-    var label: String {
-        switch self {
-        case .midnight: return "Midnight"
-        case .noir:     return "Noir"
-        case .slate:    return "Slate"
-        }
-    }
-    var description: String {
-        switch self {
-        case .midnight: return "Pure black"
-        case .noir:     return "Soft dark grey"
-        case .slate:    return "Deep blue tint"
-        }
-    }
-    var cardBG: Color {
-        switch self {
-        case .midnight: return Color(red: 0.06, green: 0.06, blue: 0.08)
-        case .noir:     return Color(red: 0.14, green: 0.14, blue: 0.16)
-        case .slate:    return Color(red: 0.08, green: 0.11, blue: 0.20)
-        }
-    }
-    var roadColour: Color {
-        switch self {
-        case .midnight: return Color(red: 0.25, green: 0.25, blue: 0.28)
-        case .noir:     return Color(red: 0.32, green: 0.32, blue: 0.34)
-        case .slate:    return Color(red: 0.20, green: 0.28, blue: 0.42)
-        }
-    }
-    func tileURL(labels: Bool) -> String {
-        let suffix = labels ? "_all" : "_nolabels"
-        // All three use CartoDB dark — the visual difference comes from our line colours
-        // and the card preview. Slate uses a slightly different base.
-        switch self {
-        case .midnight: return "https://cartodb-basemaps-a.global.ssl.fastly.net/dark\(suffix)/{z}/{x}/{y}.png"
-        case .noir:     return "https://cartodb-basemaps-a.global.ssl.fastly.net/dark\(suffix)/{z}/{x}/{y}.png"
-        case .slate:    return "https://cartodb-basemaps-a.global.ssl.fastly.net/dark\(suffix)/{z}/{x}/{y}.png"
-        }
-    }
-}
-
-/// Light-mode map flavours — all use light backgrounds
-enum LightMapStyle: String, CaseIterable, Identifiable {
-    case clean      = "clean"       // crisp white CartoDB light
-    case sand       = "sand"        // warm beige Voyager
-    case mist       = "mist"        // soft grey-white Positron
-
-    var id: String { rawValue }
-    var label: String {
-        switch self {
-        case .clean:  return "Clean"
-        case .sand:   return "Sand"
-        case .mist:   return "Mist"
-        }
-    }
-    var description: String {
-        switch self {
-        case .clean:  return "Crisp white"
-        case .sand:   return "Warm beige"
-        case .mist:   return "Soft grey"
-        }
-    }
-    var cardBG: Color {
-        switch self {
-        case .clean:  return Color(red: 0.96, green: 0.96, blue: 0.97)
-        case .sand:   return Color(red: 0.94, green: 0.91, blue: 0.86)
-        case .mist:   return Color(red: 0.91, green: 0.92, blue: 0.94)
-        }
-    }
-    var roadColour: Color {
-        switch self {
-        case .clean:  return Color(red: 0.78, green: 0.78, blue: 0.80)
-        case .sand:   return Color(red: 0.80, green: 0.74, blue: 0.64)
-        case .mist:   return Color(red: 0.72, green: 0.75, blue: 0.78)
-        }
-    }
-    func tileURL(labels: Bool) -> String {
-        let suffix = labels ? "_all" : "_nolabels"
-        switch self {
-        case .clean:  return "https://cartodb-basemaps-a.global.ssl.fastly.net/light\(suffix)/{z}/{x}/{y}.png"
-        case .sand:   return "https://cartodb-basemaps-a.global.ssl.fastly.net/rastertiles/voyager\(suffix)/{z}/{x}/{y}.png"
-        case .mist:   return "https://cartodb-basemaps-a.global.ssl.fastly.net/light\(suffix)/{z}/{x}/{y}.png"
-        }
-    }
+/// Visual filter applied to the map view.
+struct MapFilter: Equatable {
+    var saturation: Double  = 1.0
+    var hueRotation: Double = 0
+    var contrast: Double    = 1.0
+    var brightness: Double  = 0
+    var grayscale: Double   = 0
 }
 
 
@@ -129,6 +46,8 @@ enum LineColour: String, CaseIterable, Identifiable {
     case coral   = "coral"
     case gold    = "gold"
     case purple  = "purple"
+    case cyan    = "cyan"
+    case magenta = "magenta"
 
     var id: String { rawValue }
 
@@ -136,23 +55,27 @@ enum LineColour: String, CaseIterable, Identifiable {
 
     var colour: UIColor {
         switch self {
-        case .white:  return UIColor(white: 1.0, alpha: 1.0)
-        case .blue:   return UIColor(red: 0.20, green: 0.60, blue: 1.00, alpha: 1.0)
-        case .green:  return UIColor(red: 0.20, green: 0.90, blue: 0.50, alpha: 1.0)
-        case .coral:  return UIColor(red: 1.00, green: 0.40, blue: 0.35, alpha: 1.0)
-        case .gold:   return UIColor(red: 1.00, green: 0.80, blue: 0.20, alpha: 1.0)
-        case .purple: return UIColor(red: 0.70, green: 0.35, blue: 1.00, alpha: 1.0)
+        case .white:   return UIColor(white: 1.0, alpha: 1.0)
+        case .blue:    return UIColor(red: 0.20, green: 0.60, blue: 1.00, alpha: 1.0)
+        case .green:   return UIColor(red: 0.20, green: 0.90, blue: 0.50, alpha: 1.0)
+        case .coral:   return UIColor(red: 1.00, green: 0.40, blue: 0.35, alpha: 1.0)
+        case .gold:    return UIColor(red: 1.00, green: 0.80, blue: 0.20, alpha: 1.0)
+        case .purple:  return UIColor(red: 0.70, green: 0.35, blue: 1.00, alpha: 1.0)
+        case .cyan:    return UIColor(red: 0.00, green: 0.95, blue: 1.00, alpha: 1.0)
+        case .magenta: return UIColor(red: 1.00, green: 0.08, blue: 0.65, alpha: 1.0)
         }
     }
 
     var swiftColour: Color {
         switch self {
-        case .white:  return .white
-        case .blue:   return Color(red: 0.20, green: 0.60, blue: 1.00)
-        case .green:  return Color(red: 0.20, green: 0.90, blue: 0.50)
-        case .coral:  return Color(red: 1.00, green: 0.40, blue: 0.35)
-        case .gold:   return Color(red: 1.00, green: 0.80, blue: 0.20)
-        case .purple: return Color(red: 0.70, green: 0.35, blue: 1.00)
+        case .white:   return .white
+        case .blue:    return Color(red: 0.20, green: 0.60, blue: 1.00)
+        case .green:   return Color(red: 0.20, green: 0.90, blue: 0.50)
+        case .coral:   return Color(red: 1.00, green: 0.40, blue: 0.35)
+        case .gold:    return Color(red: 1.00, green: 0.80, blue: 0.20)
+        case .purple:  return Color(red: 0.70, green: 0.35, blue: 1.00)
+        case .cyan:    return Color(red: 0.00, green: 0.95, blue: 1.00)
+        case .magenta: return Color(red: 1.00, green: 0.08, blue: 0.65)
         }
     }
 }
@@ -165,31 +88,38 @@ class UserStore: ObservableObject {
         didSet { UserDefaults.standard.set(isDarkMode, forKey: "isDarkMode") }
     }
 
-    // MARK: - Personalisation
+    // MARK: - Map filters
 
-    @Published var darkMapStyle: DarkMapStyle {
-        didSet { UserDefaults.standard.set(darkMapStyle.rawValue, forKey: "darkMapStyle") }
-    }
-    @Published var lightMapStyle: LightMapStyle {
-        didSet { UserDefaults.standard.set(lightMapStyle.rawValue, forKey: "lightMapStyle") }
-    }
-
-    /// Resolved tile URL based on current theme + selected style
-    func resolvedTileURL(labels: Bool) -> String {
+    /// Dark mode: CartoDB dark tiles for standard, Tesla-style cool tint for satellite.
+    /// Light mode: Apple native for standard, unmodified for satellite.
+    func mapFilter(isSatellite: Bool) -> MapFilter {
         if isDarkMode {
-            return darkMapStyle.tileURL(labels: labels)
+            if isSatellite {
+                // Full-colour aerial imagery tinted dark — subtle desaturation +
+                // cool blue shift + slight brightness pull, like Tesla's night satellite.
+                return MapFilter(saturation: 0.65, hueRotation: -8, contrast: 1.12, brightness: -0.08, grayscale: 0)
+            } else {
+                // CartoDB dark tiles handle the base look; leave them alone.
+                return MapFilter()
+            }
         } else {
-            return lightMapStyle.tileURL(labels: labels)
+            // Light mode — unfiltered in both cases.
+            return MapFilter()
         }
+    }
+
+    /// Tile URL for the standard (non-satellite) map.
+    /// Dark mode uses CartoDB dark tiles; light mode uses Apple native (empty = native).
+    func resolvedTileURL() -> String {
+        isDarkMode
+            ? "https://cartodb-basemaps-a.global.ssl.fastly.net/dark_all/{z}/{x}/{y}.png"
+            : ""
     }
     @Published var lineColour: LineColour {
         didSet { UserDefaults.standard.set(lineColour.rawValue, forKey: "lineColour") }
     }
     @Published var lineOpacity: Double {
         didSet { UserDefaults.standard.set(lineOpacity, forKey: "lineOpacity") }
-    }
-    @Published var showMapLabels: Bool {
-        didSet { UserDefaults.standard.set(showMapLabels, forKey: "showMapLabels") }
     }
     @Published var pulseActive: Bool {
         didSet { UserDefaults.standard.set(pulseActive, forKey: "pulseActive") }
@@ -230,13 +160,10 @@ class UserStore: ObservableObject {
         } else {
             self.isDarkMode = UserDefaults.standard.bool(forKey: "isDarkMode")
         }
-        self.darkMapStyle  = DarkMapStyle(rawValue: UserDefaults.standard.string(forKey: "darkMapStyle") ?? "") ?? .midnight
-        self.lightMapStyle = LightMapStyle(rawValue: UserDefaults.standard.string(forKey: "lightMapStyle") ?? "") ?? .clean
         self.lineColour = LineColour(rawValue: UserDefaults.standard.string(forKey: "lineColour") ?? "") ?? .white
         self.lineOpacity = UserDefaults.standard.object(forKey: "lineOpacity") == nil
             ? 0.85
             : UserDefaults.standard.double(forKey: "lineOpacity")
-        self.showMapLabels = UserDefaults.standard.bool(forKey: "showMapLabels")
         self.pulseActive = UserDefaults.standard.object(forKey: "pulseActive") == nil
             ? true
             : UserDefaults.standard.bool(forKey: "pulseActive")

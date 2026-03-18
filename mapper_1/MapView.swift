@@ -23,6 +23,9 @@ struct MapView: View {
     @Namespace private var glassNS
 
     var isDark: Bool { colorScheme == .dark }
+    var currentFilter: MapFilter {
+        userStore.mapFilter(isSatellite: isSatellite)
+    }
 
     var body: some View {
         ZStack {
@@ -36,7 +39,7 @@ struct MapView: View {
                 pickingPin: simMode == .pickingPin,
                 isDark: isDark,
                 isSatellite: isSatellite,
-                resolvedTileURL: userStore.resolvedTileURL(labels: userStore.showMapLabels),
+                resolvedTileURL: userStore.resolvedTileURL(),
                 lineColour: userStore.lineColour,
                 lineOpacity: userStore.lineOpacity,
                 pulseActive: userStore.pulseActive,
@@ -47,6 +50,12 @@ struct MapView: View {
                 }
             )
             .ignoresSafeArea(.all)
+            .grayscale(currentFilter.grayscale)
+            .saturation(currentFilter.saturation)
+            .hueRotation(.degrees(currentFilter.hueRotation))
+            .contrast(currentFilter.contrast)
+            .brightness(currentFilter.brightness)
+            .animation(.easeInOut(duration: 0.4), value: currentFilter)
 
             VStack(spacing: 0) {
                 Spacer().frame(height: 60)
@@ -297,6 +306,11 @@ struct TrackingMapView: UIViewRepresentable {
         return resolvedTileURL.isEmpty ? nil : resolvedTileURL
     }
 
+    /// Composite key encoding both tile URL and mode so Normal+road vs Normal+sat are distinct.
+    private var tileKey: String {
+        isSatellite ? "__sat__" : (tileURL ?? "__native__")
+    }
+
     func makeUIView(context: Context) -> MKMapView {
         let map = MKMapView(frame: .zero)
         map.delegate = context.coordinator
@@ -304,7 +318,9 @@ struct TrackingMapView: UIViewRepresentable {
         map.showsCompass = true
         map.isRotateEnabled = true
         if let url = tileURL { context.coordinator.applyTile(to: map, url: url) }
-        else { map.mapType = .hybridFlyover }
+        else if isSatellite { map.mapType = .hybridFlyover }
+        else { map.mapType = .standard }
+        context.coordinator.currentTileURL = tileKey
         let tap = UITapGestureRecognizer(target: context.coordinator,
                                           action: #selector(Coordinator.tapped(_:)))
         map.addGestureRecognizer(tap)
@@ -328,12 +344,12 @@ struct TrackingMapView: UIViewRepresentable {
         }
 
         // Tile / map type
-        let url = tileURL ?? ""
-        if c.currentTileURL != url {
-            c.currentTileURL = url
+        if c.currentTileURL != tileKey {
+            c.currentTileURL = tileKey
             map.overlays.filter { $0 is MKTileOverlay }.forEach { map.removeOverlay($0) }
             if let u = tileURL { map.mapType = .standard; c.applyTile(to: map, url: u) }
-            else { map.mapType = .hybridFlyover }
+            else if isSatellite { map.mapType = .hybridFlyover }
+            else { map.mapType = .standard }
         }
 
         // Car avatar
@@ -381,7 +397,7 @@ struct TrackingMapView: UIViewRepresentable {
         }
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(tileURL: tileURL ?? "") }
+    func makeCoordinator() -> Coordinator { Coordinator(tileURL: tileKey) }
 
     // MARK: Coordinator
 
