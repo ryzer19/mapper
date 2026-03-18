@@ -80,12 +80,47 @@ enum LineColour: String, CaseIterable, Identifiable {
     }
 }
 
+// MARK: - Furthest Point
+
+struct FurthestPoint {
+    let coordinate: CLLocationCoordinate2D
+    let distanceMiles: Double
+}
+
 // MARK: - UserStore
 
 class UserStore: ObservableObject {
 
     @Published var isDarkMode: Bool {
         didSet { UserDefaults.standard.set(isDarkMode, forKey: "isDarkMode") }
+    }
+
+    @Published var homeCoordinate: CLLocationCoordinate2D? {
+        didSet {
+            if let h = homeCoordinate {
+                UserDefaults.standard.set(h.latitude,  forKey: "homeLat")
+                UserDefaults.standard.set(h.longitude, forKey: "homeLon")
+            } else {
+                UserDefaults.standard.removeObject(forKey: "homeLat")
+                UserDefaults.standard.removeObject(forKey: "homeLon")
+            }
+        }
+    }
+
+    var furthestPointFromHome: FurthestPoint? {
+        guard let home = homeCoordinate else { return nil }
+        let homeLoc = CLLocation(latitude: home.latitude, longitude: home.longitude)
+        var bestCoord: CLLocationCoordinate2D?
+        var bestDist: Double = 0
+        for seg in segments {
+            for pt in seg.points {
+                let d = CLLocation(latitude: pt.latitude, longitude: pt.longitude)
+                    .distance(from: homeLoc)
+                if d > bestDist { bestDist = d; bestCoord = pt.coordinate }
+            }
+        }
+        guard let coord = bestCoord else { return nil }
+        return FurthestPoint(coordinate: coord, distanceMiles: bestDist / 1609.34)
     }
 
     // MARK: - Map filters
@@ -159,6 +194,13 @@ class UserStore: ObservableObject {
             self.isDarkMode = true
         } else {
             self.isDarkMode = UserDefaults.standard.bool(forKey: "isDarkMode")
+        }
+        if UserDefaults.standard.object(forKey: "homeLat") != nil {
+            self.homeCoordinate = CLLocationCoordinate2D(
+                latitude:  UserDefaults.standard.double(forKey: "homeLat"),
+                longitude: UserDefaults.standard.double(forKey: "homeLon"))
+        } else {
+            self.homeCoordinate = nil
         }
         self.lineColour = LineColour(rawValue: UserDefaults.standard.string(forKey: "lineColour") ?? "") ?? .white
         self.lineOpacity = UserDefaults.standard.object(forKey: "lineOpacity") == nil

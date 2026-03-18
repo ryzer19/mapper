@@ -43,6 +43,8 @@ struct MapView: View {
                 lineColour: userStore.lineColour,
                 lineOpacity: userStore.lineOpacity,
                 pulseActive: userStore.pulseActive,
+                homeCoordinate: userStore.homeCoordinate,
+                furthestCoordinate: userStore.furthestPointFromHome?.coordinate,
                 onTap: { coord in
                     guard simMode == .pickingPin else { return }
                     pinCoord = coord
@@ -67,6 +69,26 @@ struct MapView: View {
                     Spacer()
                 }
                 .padding(.horizontal, 16)
+
+                // Furthest point card
+                if let fp = userStore.furthestPointFromHome {
+                    HStack(spacing: 8) {
+                        Image(systemName: "house.fill")
+                            .font(.caption2).foregroundStyle(.blue)
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        Image(systemName: "star.fill")
+                            .font(.caption2).foregroundStyle(.orange)
+                        Text(String(format: "%.1f mi from home", fp.distanceMiles))
+                            .font(.caption.weight(.medium))
+                        Spacer()
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .padding(.horizontal, 16).padding(.top, 6)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                }
 
                 // Denied banner
                 if locationManager.authorizationStatus == .denied ||
@@ -157,6 +179,23 @@ struct MapView: View {
                         }
                         .glassEffect(.regular.interactive(), in: Circle())
                         .glassEffectID("sat", in: glassNS)
+
+                        Button {
+                            withAnimation {
+                                if userStore.homeCoordinate != nil {
+                                    userStore.homeCoordinate = nil
+                                } else if let loc = locationManager.currentLocation {
+                                    userStore.homeCoordinate = loc.coordinate
+                                }
+                            }
+                        } label: {
+                            Image(systemName: userStore.homeCoordinate != nil ? "house.fill" : "house")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(userStore.homeCoordinate != nil ? .blue : .primary)
+                                .frame(width: 50, height: 50)
+                        }
+                        .glassEffect(.regular.interactive(), in: Circle())
+                        .glassEffectID("home", in: glassNS)
                     }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 28)
@@ -299,6 +338,8 @@ struct TrackingMapView: UIViewRepresentable {
     var lineColour: LineColour = .white
     var lineOpacity: Double = 0.85
     var pulseActive: Bool = true
+    var homeCoordinate: CLLocationCoordinate2D? = nil
+    var furthestCoordinate: CLLocationCoordinate2D? = nil
     var onTap: ((CLLocationCoordinate2D) -> Void)?
 
     private var tileURL: String? {
@@ -371,6 +412,28 @@ struct TrackingMapView: UIViewRepresentable {
             if pins.isEmpty { map.addAnnotation(DestinationPin(coordinate: coord)) }
         } else { pins.forEach { map.removeAnnotation($0) } }
 
+        // Home annotation
+        let homeKey = homeCoordinate.map { "\($0.latitude),\($0.longitude)" } ?? ""
+        if c.lastHomeKey != homeKey {
+            c.lastHomeKey = homeKey
+            map.annotations.filter { $0 is HomeAnnotation }.forEach { map.removeAnnotation($0) }
+            if let h = homeCoordinate { map.addAnnotation(HomeAnnotation(coordinate: h)) }
+        }
+
+        // Furthest annotation + dashed line
+        let furthestKey = furthestCoordinate.map { "\($0.latitude),\($0.longitude)" } ?? ""
+        if c.lastFurthestKey != furthestKey {
+            c.lastFurthestKey = furthestKey
+            map.annotations.filter { $0 is FurthestAnnotation }.forEach { map.removeAnnotation($0) }
+            map.overlays.filter { $0 is FurthestLineOverlay }.forEach { map.removeOverlay($0) }
+            if let f = furthestCoordinate, let h = homeCoordinate {
+                map.addAnnotation(FurthestAnnotation(coordinate: f))
+                var coords = [h, f]
+                map.addOverlay(FurthestLineOverlay(coordinates: &coords, count: 2),
+                               level: .aboveRoads)
+            }
+        }
+
         // Segment overlays — redraw when data OR any visual style changes
         let totalCount  = segments.reduce(0) { $0 + $1.points.count }
         let styleHash   = "\(lineColour.rawValue)-\(lineOpacity)-\(pulseActive)"
@@ -419,6 +482,8 @@ struct TrackingMapView: UIViewRepresentable {
         var lineOpacity: Double = 0.85
         var pulseActive: Bool = true
         var lastStyleHash: String = ""
+        var lastHomeKey: String = ""
+        var lastFurthestKey: String = ""
 
         init(tileURL: String) { self.currentTileURL = tileURL }
 
@@ -444,10 +509,15 @@ struct TrackingMapView: UIViewRepresentable {
                 applyStyle(to: r, isActive: seg.isActive,
                            span: map.region.span.latitudeDelta)
                 renderers[ObjectIdentifier(seg)] = r
-                // Add pulse animation to active segment
-                if seg.isActive && pulseActive {
-                    addPulse(to: r)
-                }
+                if seg.isActive && pulseActive { addPulse(to: r) }
+                return r
+            }
+            if let line = overlay as? FurthestLineOverlay {
+                let r = MKPolylineRenderer(polyline: line)
+                r.strokeColor = UIColor.systemOrange.withAlphaComponent(0.45)
+                r.lineWidth = 1.5
+                r.lineDashPattern = [4, 7]
+                r.lineCap = .round
                 return r
             }
             return MKOverlayRenderer(overlay: overlay)
@@ -519,6 +589,23 @@ struct TrackingMapView: UIViewRepresentable {
                     ?? CarAnnotationView(annotation: car, reuseIdentifier: "car")
                 av.annotation = annotation
                 av.updateHeading(car.heading)
+                return av
+            }
+            if annotation is HomeAnnotation {
+                let av = (map.dequeueReusableAnnotationView(withIdentifier: "home") as? MKMarkerAnnotationView)
+                    ?? MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: "home")
+                av.markerTintColor = .systemBlue
+                av.glyphImage = UIImage(systemName: "house.fill")
+                av.annotation = annotation
+                return av
+            }
+            if annotation is FurthestAnnotation {
+                let av = (map.dequeueReusableAnnotationView(withIdentifier: "furthest") as? MKMarkerAnnotationView)
+                    ?? MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: "furthest")
+                av.markerTintColor = .systemOrange
+                av.glyphImage = UIImage(systemName: "star.fill")
+                av.animatesWhenAdded = true
+                av.annotation = annotation
                 return av
             }
             if annotation is DestinationPin {
@@ -607,6 +694,18 @@ class DestinationPin: NSObject, MKAnnotation {
     @objc dynamic var coordinate: CLLocationCoordinate2D
     init(coordinate: CLLocationCoordinate2D) { self.coordinate = coordinate }
 }
+
+class HomeAnnotation: NSObject, MKAnnotation {
+    @objc dynamic var coordinate: CLLocationCoordinate2D
+    init(coordinate: CLLocationCoordinate2D) { self.coordinate = coordinate }
+}
+
+class FurthestAnnotation: NSObject, MKAnnotation {
+    @objc dynamic var coordinate: CLLocationCoordinate2D
+    init(coordinate: CLLocationCoordinate2D) { self.coordinate = coordinate }
+}
+
+class FurthestLineOverlay: MKPolyline {}
 
 // MARK: - Stats Widget
 
