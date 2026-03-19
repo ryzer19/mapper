@@ -25,7 +25,7 @@ struct PersonaliseView: View {
                     columns: Array(repeating: GridItem(.flexible()), count: 6),
                     spacing: 16
                 ) {
-                    ForEach(LineColour.allCases) { colour in
+                    ForEach(LineColour.allCases.filter { $0 != .custom }) { colour in
                         ColourDot(
                             colour: colour,
                             isSelected: userStore.lineColour == colour
@@ -40,9 +40,32 @@ struct PersonaliseView: View {
                 .listRowBackground(Color.clear)
                 .listRowInsets(EdgeInsets())
 
+                // Custom colour picker
+                HStack {
+                    Label("Custom", systemImage: "paintpalette.fill")
+                        .foregroundStyle(userStore.lineColour == .custom ? userStore.customLineColor : .primary)
+                    Spacer()
+                    if userStore.lineColour == .custom {
+                        Image(systemName: "checkmark")
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(.blue)
+                            .padding(.trailing, 8)
+                    }
+                    ColorPicker("", selection: Binding(
+                        get: { userStore.customLineColor },
+                        set: { newColor in
+                            userStore.customLineColor = newColor
+                            withAnimation(.spring(response: 0.3)) {
+                                userStore.lineColour = .custom
+                            }
+                        }
+                    ))
+                    .labelsHidden()
+                }
+
                 // Live preview
                 LinePreview(
-                    colour: userStore.lineColour,
+                    colour: userStore.resolvedLineColor,
                     opacity: userStore.lineOpacity,
                     isDark: userStore.isDarkMode
                 )
@@ -63,7 +86,7 @@ struct PersonaliseView: View {
                         Text("Bold").font(.caption).foregroundStyle(.secondary)
                     }
                     Slider(value: $userStore.lineOpacity, in: 0.2...1.0, step: 0.05)
-                        .tint(userStore.lineColour.swiftColour)
+                        .tint(userStore.resolvedLineColor)
                 }
                 .padding(.vertical, 4)
             }
@@ -116,7 +139,7 @@ struct ColourDot: View {
 // MARK: - Line Preview
 
 struct LinePreview: View {
-    let colour: LineColour
+    let colour: Color
     let opacity: Double
     let isDark: Bool
 
@@ -137,13 +160,13 @@ struct LinePreview: View {
 
             // Glow
             RoundedRectangle(cornerRadius: 3)
-                .fill(colour.swiftColour.opacity(opacity * 0.30))
+                .fill(colour.opacity(opacity * 0.30))
                 .frame(height: 16)
                 .padding(.horizontal, 24)
 
             // Core line
             RoundedRectangle(cornerRadius: 2)
-                .fill(colour.swiftColour.opacity(opacity))
+                .fill(colour.opacity(opacity))
                 .frame(height: 4)
                 .padding(.horizontal, 24)
         }

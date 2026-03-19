@@ -19,6 +19,10 @@ struct MapView: View {
     @State private var showRouting = false
     @State private var isSatellite = false
     @State private var routeError: String? = nil
+    @State private var lookAroundScene: MKLookAroundScene? = nil
+    @State private var showLookAround = false
+    @State private var lookAroundLoading = false
+    @State private var menuExpanded = false
 
     @Namespace private var glassNS
 
@@ -40,7 +44,7 @@ struct MapView: View {
                 isDark: isDark,
                 isSatellite: isSatellite,
                 resolvedTileURL: userStore.resolvedTileURL(),
-                lineColour: userStore.lineColour,
+                lineColor: userStore.resolvedLineUIColor,
                 lineOpacity: userStore.lineOpacity,
                 pulseActive: userStore.pulseActive,
                 homeCoordinate: userStore.homeCoordinate,
@@ -49,6 +53,10 @@ struct MapView: View {
                     guard simMode == .pickingPin else { return }
                     pinCoord = coord
                     beginSimulation(to: coord)
+                },
+                onLongPress: { coord in
+                    guard simMode == .idle else { return }
+                    fetchLookAround(at: coord)
                 }
             )
             .ignoresSafeArea(.all)
@@ -132,6 +140,49 @@ struct MapView: View {
 
                 Spacer()
 
+                // Look Around card
+                if showLookAround, let scene = lookAroundScene {
+                    VStack(spacing: 0) {
+                        HStack {
+                            Label("Look Around", systemImage: "binoculars.fill")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button {
+                                withAnimation(.spring(response: 0.3)) {
+                                    showLookAround = false
+                                    lookAroundScene = nil
+                                }
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.secondary)
+                                    .font(.system(size: 18))
+                            }
+                        }
+                        .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 6)
+
+                        LookAroundPreview(initialScene: scene)
+                            .frame(height: 180)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                            .padding([.horizontal, .bottom], 8)
+                    }
+                    .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .padding(.horizontal, 16).padding(.bottom, 8)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+
+                // Look Around loading pill
+                if lookAroundLoading {
+                    HStack(spacing: 8) {
+                        ProgressView().progressViewStyle(.circular).scaleEffect(0.7)
+                        Text("Loading Look Around…").font(.caption.weight(.medium))
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                    .glassEffect(.regular, in: Capsule())
+                    .padding(.bottom, 8)
+                    .transition(.opacity)
+                }
+
                 // Controls
                 HStack(alignment: .bottom, spacing: 12) {
                     Button { showRouting = true } label: {
@@ -159,27 +210,9 @@ struct MapView: View {
 
                     Spacer()
 
-                    GlassEffectContainer(spacing: 8) {
-                        Button { locationManager.centerOnUser() } label: {
-                            Image(systemName: userCentered ? "location.fill" : "location")
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(userCentered ? .blue : .primary)
-                                .frame(width: 50, height: 50)
-                        }
-                        .glassEffect(.regular.interactive(), in: Circle())
-                        .glassEffectID("loc", in: glassNS)
-
-                        Button {
-                            withAnimation(.spring(response: 0.3)) { isSatellite.toggle() }
-                        } label: {
-                            Image(systemName: isSatellite ? "map.fill" : "globe.europe.africa.fill")
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(isSatellite ? .blue : .primary)
-                                .frame(width: 50, height: 50)
-                        }
-                        .glassEffect(.regular.interactive(), in: Circle())
-                        .glassEffectID("sat", in: glassNS)
-
+                    // Fan menu
+                    ZStack(alignment: .bottom) {
+                        // Item 3 — Home (topmost)
                         Button {
                             withAnimation {
                                 if userStore.homeCoordinate != nil {
@@ -188,6 +221,7 @@ struct MapView: View {
                                     userStore.homeCoordinate = loc.coordinate
                                 }
                             }
+                            withAnimation(.spring(response: 0.3)) { menuExpanded = false }
                         } label: {
                             Image(systemName: userStore.homeCoordinate != nil ? "house.fill" : "house")
                                 .font(.system(size: 17, weight: .semibold))
@@ -195,7 +229,58 @@ struct MapView: View {
                                 .frame(width: 50, height: 50)
                         }
                         .glassEffect(.regular.interactive(), in: Circle())
-                        .glassEffectID("home", in: glassNS)
+                        .offset(y: menuExpanded ? -186 : 0)
+                        .opacity(menuExpanded ? 1 : 0)
+                        .scaleEffect(menuExpanded ? 1 : 0.4)
+                        .animation(.spring(response: 0.38, dampingFraction: 0.72)
+                            .delay(menuExpanded ? 0.14 : 0.0), value: menuExpanded)
+
+                        // Item 2 — Satellite
+                        Button {
+                            withAnimation(.spring(response: 0.3)) { isSatellite.toggle() }
+                            withAnimation(.spring(response: 0.3)) { menuExpanded = false }
+                        } label: {
+                            Image(systemName: isSatellite ? "map.fill" : "globe.europe.africa.fill")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(isSatellite ? .blue : .primary)
+                                .frame(width: 50, height: 50)
+                        }
+                        .glassEffect(.regular.interactive(), in: Circle())
+                        .offset(y: menuExpanded ? -124 : 0)
+                        .opacity(menuExpanded ? 1 : 0)
+                        .scaleEffect(menuExpanded ? 1 : 0.4)
+                        .animation(.spring(response: 0.38, dampingFraction: 0.72)
+                            .delay(menuExpanded ? 0.07 : 0.07), value: menuExpanded)
+
+                        // Item 1 — Location (closest to trigger)
+                        Button {
+                            locationManager.centerOnUser()
+                            withAnimation(.spring(response: 0.3)) { menuExpanded = false }
+                        } label: {
+                            Image(systemName: userCentered ? "location.fill" : "location")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(userCentered ? .blue : .primary)
+                                .frame(width: 50, height: 50)
+                        }
+                        .glassEffect(.regular.interactive(), in: Circle())
+                        .offset(y: menuExpanded ? -62 : 0)
+                        .opacity(menuExpanded ? 1 : 0)
+                        .scaleEffect(menuExpanded ? 1 : 0.4)
+                        .animation(.spring(response: 0.38, dampingFraction: 0.72)
+                            .delay(menuExpanded ? 0.0 : 0.14), value: menuExpanded)
+
+                        // Trigger button
+                        Button {
+                            withAnimation(.spring(response: 0.3)) { menuExpanded.toggle() }
+                        } label: {
+                            Image(systemName: "slider.horizontal.3")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(.primary)
+                                .rotationEffect(.degrees(menuExpanded ? 90 : 0))
+                                .frame(width: 50, height: 50)
+                        }
+                        .glassEffect(.regular.interactive(), in: Circle())
+                        .animation(.spring(response: 0.3), value: menuExpanded)
                     }
                 }
                 .padding(.horizontal, 16).padding(.bottom, 28)
@@ -297,6 +382,31 @@ struct MapView: View {
         }
     }
 
+    func fetchLookAround(at coordinate: CLLocationCoordinate2D?) {
+        guard let coord = coordinate else { return }
+        withAnimation { lookAroundLoading = true; showLookAround = false; lookAroundScene = nil }
+        Task {
+            let request = MKLookAroundSceneRequest(coordinate: coord)
+            do {
+                let scene = try await request.scene
+                await MainActor.run {
+                    withAnimation { lookAroundLoading = false }
+                    if let scene {
+                        lookAroundScene = scene
+                        withAnimation(.spring(response: 0.4)) { showLookAround = true }
+                    } else {
+                        routeError = "Look Around not available here."
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    withAnimation { lookAroundLoading = false }
+                    routeError = "Look Around unavailable."
+                }
+            }
+        }
+    }
+
     func beginSimulation(to destination: CLLocationCoordinate2D) {
         guard let origin = locationManager.currentLocation?.coordinate else {
             withAnimation { simMode = .idle; pinCoord = nil }
@@ -335,12 +445,13 @@ struct TrackingMapView: UIViewRepresentable {
     var isDark: Bool
     var isSatellite: Bool
     var resolvedTileURL: String = ""
-    var lineColour: LineColour = .white
+    var lineColor: UIColor = .white
     var lineOpacity: Double = 0.85
     var pulseActive: Bool = true
     var homeCoordinate: CLLocationCoordinate2D? = nil
     var furthestCoordinate: CLLocationCoordinate2D? = nil
     var onTap: ((CLLocationCoordinate2D) -> Void)?
+    var onLongPress: ((CLLocationCoordinate2D) -> Void)?
 
     private var tileURL: String? {
         guard !isSatellite else { return nil }
@@ -365,6 +476,10 @@ struct TrackingMapView: UIViewRepresentable {
         let tap = UITapGestureRecognizer(target: context.coordinator,
                                           action: #selector(Coordinator.tapped(_:)))
         map.addGestureRecognizer(tap)
+        let longPress = UILongPressGestureRecognizer(target: context.coordinator,
+                                                      action: #selector(Coordinator.longPressed(_:)))
+        longPress.minimumPressDuration = 0.5
+        map.addGestureRecognizer(longPress)
         context.coordinator.mapView = map
         return map
     }
@@ -372,9 +487,10 @@ struct TrackingMapView: UIViewRepresentable {
     func updateUIView(_ map: MKMapView, context: Context) {
         let c = context.coordinator
         c.onTap = onTap
+        c.onLongPress = onLongPress
         c.pickingPin = pickingPin
         c.isDark = isDark
-        c.lineColour = lineColour
+        c.lineColor = lineColor
         c.lineOpacity = lineOpacity
         c.pulseActive = pulseActive
 
@@ -436,7 +552,7 @@ struct TrackingMapView: UIViewRepresentable {
 
         // Segment overlays — redraw when data OR any visual style changes
         let totalCount  = segments.reduce(0) { $0 + $1.points.count }
-        let styleHash   = "\(lineColour.rawValue)-\(lineOpacity)-\(pulseActive)"
+        let styleHash   = "\(lineColor)-\(lineOpacity)-\(pulseActive)"
         let needsRedraw = c.lastTotalPoints != totalCount
                        || c.lastSegmentCount != segments.count
                        || c.lastStyleHash != styleHash
@@ -474,12 +590,13 @@ struct TrackingMapView: UIViewRepresentable {
         var lastSegmentCount = 0
         var pickingPin = false
         var onTap: ((CLLocationCoordinate2D) -> Void)?
+        var onLongPress: ((CLLocationCoordinate2D) -> Void)?
         weak var mapView: MKMapView?
 
         // Cache renderers so we can update lineWidth on zoom
         var renderers: [ObjectIdentifier: MKPolylineRenderer] = [:]
         var lastSpan: Double = 0.01
-        var lineColour: LineColour = .white
+        var lineColor: UIColor = .white
         var lineOpacity: Double = 0.85
         var pulseActive: Bool = true
         var lastStyleHash: String = ""
@@ -491,6 +608,11 @@ struct TrackingMapView: UIViewRepresentable {
         @objc func tapped(_ gr: UITapGestureRecognizer) {
             guard pickingPin, let map = gr.view as? MKMapView else { return }
             onTap?(map.convert(gr.location(in: map), toCoordinateFrom: map))
+        }
+
+        @objc func longPressed(_ gr: UILongPressGestureRecognizer) {
+            guard gr.state == .began, let map = gr.view as? MKMapView else { return }
+            onLongPress?(map.convert(gr.location(in: map), toCoordinateFrom: map))
         }
 
         func applyTile(to map: MKMapView, url: String) {
@@ -542,13 +664,13 @@ struct TrackingMapView: UIViewRepresentable {
         func applyStyle(to r: MKPolylineRenderer, isActive: Bool, span: Double) {
             r.lineWidth = lineWidth(for: span, isActive: isActive)
             let alpha = isActive ? lineOpacity : lineOpacity * 0.65
-            r.strokeColor = lineColour.colour.withAlphaComponent(CGFloat(alpha))
+            r.strokeColor = lineColor.withAlphaComponent(CGFloat(alpha))
             r.lineCap = .round; r.lineJoin = .round
         }
 
         /// Adds a repeating opacity pulse to an active segment renderer
         func addPulse(to r: MKPolylineRenderer) {
-            let baseColour = lineColour.colour
+            let baseColour = lineColor
             let low  = CGFloat(lineOpacity) * 0.35
             let high = CGFloat(lineOpacity)
             var alpha = high

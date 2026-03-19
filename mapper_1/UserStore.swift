@@ -48,6 +48,7 @@ enum LineColour: String, CaseIterable, Identifiable {
     case purple  = "purple"
     case cyan    = "cyan"
     case magenta = "magenta"
+    case custom  = "custom"
 
     var id: String { rawValue }
 
@@ -63,6 +64,7 @@ enum LineColour: String, CaseIterable, Identifiable {
         case .purple:  return UIColor(red: 0.70, green: 0.35, blue: 1.00, alpha: 1.0)
         case .cyan:    return UIColor(red: 0.00, green: 0.95, blue: 1.00, alpha: 1.0)
         case .magenta: return UIColor(red: 1.00, green: 0.08, blue: 0.65, alpha: 1.0)
+        case .custom:  return .white
         }
     }
 
@@ -76,6 +78,7 @@ enum LineColour: String, CaseIterable, Identifiable {
         case .purple:  return Color(red: 0.70, green: 0.35, blue: 1.00)
         case .cyan:    return Color(red: 0.00, green: 0.95, blue: 1.00)
         case .magenta: return Color(red: 1.00, green: 0.08, blue: 0.65)
+        case .custom:  return .white
         }
     }
 }
@@ -153,6 +156,24 @@ class UserStore: ObservableObject {
     @Published var lineColour: LineColour {
         didSet { UserDefaults.standard.set(lineColour.rawValue, forKey: "lineColour") }
     }
+    @Published var customLineColor: Color {
+        didSet {
+            let ui = UIColor(customLineColor)
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0
+            ui.getRed(&r, green: &g, blue: &b, alpha: nil)
+            UserDefaults.standard.set(Double(r), forKey: "customColorR")
+            UserDefaults.standard.set(Double(g), forKey: "customColorG")
+            UserDefaults.standard.set(Double(b), forKey: "customColorB")
+        }
+    }
+
+    var resolvedLineColor: Color {
+        lineColour == .custom ? customLineColor : lineColour.swiftColour
+    }
+    var resolvedLineUIColor: UIColor {
+        lineColour == .custom ? UIColor(customLineColor) : lineColour.colour
+    }
+
     @Published var lineOpacity: Double {
         didSet { UserDefaults.standard.set(lineOpacity, forKey: "lineOpacity") }
     }
@@ -203,6 +224,10 @@ class UserStore: ObservableObject {
             self.homeCoordinate = nil
         }
         self.lineColour = LineColour(rawValue: UserDefaults.standard.string(forKey: "lineColour") ?? "") ?? .white
+        let cr = UserDefaults.standard.object(forKey: "customColorR") != nil ? CGFloat(UserDefaults.standard.double(forKey: "customColorR")) : 1.0
+        let cg = UserDefaults.standard.object(forKey: "customColorG") != nil ? CGFloat(UserDefaults.standard.double(forKey: "customColorG")) : 1.0
+        let cb = UserDefaults.standard.object(forKey: "customColorB") != nil ? CGFloat(UserDefaults.standard.double(forKey: "customColorB")) : 1.0
+        self.customLineColor = Color(red: Double(cr), green: Double(cg), blue: Double(cb))
         self.lineOpacity = UserDefaults.standard.object(forKey: "lineOpacity") == nil
             ? 0.85
             : UserDefaults.standard.double(forKey: "lineOpacity")
